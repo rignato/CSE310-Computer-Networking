@@ -1,0 +1,67 @@
+[rob@royale hw1]$ ./mydig.py 
+
+USAGE:
+
+mydig <DOMAIN>
+
+[rob@royale hw1]$ ./mydig.py google.com
+
+QUESTION SECTION:
+google.com. IN A
+
+ANSWER SECTION:
+google.com. 300 IN A 172.217.11.174
+
+Query time: 393.64ms
+WHEN: Tue Feb 25 00:16:57 2020
+
+[rob@royale hw1]$ ./mydig.py reddit.com
+
+QUESTION SECTION:
+reddit.com. IN A
+
+ANSWER SECTION:
+reddit.com. 300 IN A 151.101.65.140
+reddit.com. 300 IN A 151.101.129.140
+reddit.com. 300 IN A 151.101.193.140
+reddit.com. 300 IN A 151.101.1.140
+
+Query time: 388.77ms
+WHEN: Tue Feb 25 00:17:03 2020
+
+[rob@royale hw1]$ ./mydig.py www.cnn.com
+
+QUESTION SECTION:
+www.cnn.com. IN A
+
+ANSWER SECTION:
+www.cnn.com. 300 IN CNAME turner-tls.map.fastly.net.
+turner-tls.map.fastly.net. 30 IN A 151.101.25.67
+
+Query time: 715.37ms
+WHEN: Tue Feb 25 00:17:11 2020
+
+[rob@royale hw1]$ ./mydig.py twitch.tv
+
+QUESTION SECTION:
+twitch.tv. IN A
+
+ANSWER SECTION:
+twitch.tv. 300 IN A 151.101.2.167
+twitch.tv. 300 IN A 151.101.66.167
+twitch.tv. 300 IN A 151.101.130.167
+twitch.tv. 300 IN A 151.101.194.167
+
+Query time: 644.12ms
+WHEN: Tue Feb 25 00:22:37 2020
+
+[rob@royale hw1]$ ./mydig.py google.co.jp
+
+QUESTION SECTION:
+google.co.jp. IN A
+
+ANSWER SECTION:
+google.co.jp. 300 IN A 172.217.14.99
+
+Query time: 821.41ms
+WHEN: Tue Feb 25 00:22:47 2020
