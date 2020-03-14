@@ -92,6 +92,7 @@ def analyze(pcap, max_pkt_per_flow=2, max_cwnd_rtt_count=5):
             fin = ip['fin']
             rwnd = tcp.win << flow['scale']
             if (src == SRC_IP and dst == DST_IP):
+                total_data += int(len(tcp.data) + (tcp.off*4))
                 if syn:
                     print("\n--- Start flow %s:%s -> %s:%s ---\n" % (src, tcp.sport, dst, tcp.dport))
                     time_dict[tcp.seq+1] = ip['timestamp']
@@ -110,7 +111,6 @@ def analyze(pcap, max_pkt_per_flow=2, max_cwnd_rtt_count=5):
                                 rwnd
                             ))
                             src_c += 1
-                        total_data += int(len(tcp.data) + (tcp.off*4))
                         if tcp.seq+len(tcp.data) in time_dict:
                             if fast_retransmit == tcp.seq:
                                 triple_dup_acks += 1
