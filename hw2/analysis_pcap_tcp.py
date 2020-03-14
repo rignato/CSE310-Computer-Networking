@@ -1,10 +1,10 @@
 #!/bin/python
 
 import dpkt
-import sys, datetime, socket
+import sys, datetime, socket, math
 from datetime import datetime, timedelta
 
-USAGE = "USAGE:\tanalysis_pcap_tcp.py <PCAP FILE>"
+USAGE = "\nUSAGE:\tanalysis_pcap_tcp.py <PCAP FILE> [SRC_IP] [DEST_IP]\nSource and destination IP are optional.\n"
 SRC_IP = "130.245.145.12" 
 DST_IP = "128.208.2.198"
 
@@ -36,16 +36,16 @@ def map_flow(pcap):
                     'scale': tcp.opts[-1],
                     'iseq': tcp.seq
                 }
-                if (flow_dict.get(tcp.sport, False)):
+                if tcp.sport in flow_dict:
                     flow_dict[tcp.sport].append(syn_dict)
                 else:
                     flow_dict[tcp.sport] = [syn_dict]
             else:        
-                if (flow_dict.get(tcp.sport, False)):
+                if tcp.sport in flow_dict:
                     syn_dict = max(flow_dict[tcp.sport], key=lambda x: x['flow_start'])
                     syn_dict['flow'].append(pkt_dict)
         elif (src == DST_IP and dst == SRC_IP):
-            if (flow_dict.get(tcp.dport, False)):
+            if tcp.dport in flow_dict:
                 syn_dict = max(flow_dict[tcp.dport], key=lambda x: x['flow_start'])
                 if (not syn_dict.get('iack', False)):
                     syn_dict['iack'] = tcp.seq
@@ -68,12 +68,27 @@ def analyze(pcap, max_pkt_per_flow=2, max_cwnd_rtt_count=5):
         src_c = 0
         dst_c = 0
         total_data = 0
+
         cwnd_i = 0
         cwnd_lst = [0] * max_cwnd_rtt_count
         pkt_buf = []
+        
+        ack_dict = {}
+
+        triple_dup_acks = 0
+        timeouts = 0
+        fast_retransmit = 0
+
+        rtt_prime = 0
+        rtt_old = 0
+        WEIGHT = 0.125
+
+        time_dict = {}
+        time_ack = 0
+
         start_time = datetime.fromtimestamp(flow['flow_start'])
         sorted_flows = sorted(flow['flow'], key=lambda x: x['timestamp'])
-        for ip in sorted_flows:
+        for ip_i, ip in enumerate(sorted_flows):
             src = ip['src']
             dst = ip['dst']
             tcp = ip['tcp']
@@ -84,13 +99,14 @@ def analyze(pcap, max_pkt_per_flow=2, max_cwnd_rtt_count=5):
             if (src == SRC_IP and dst == DST_IP):
                 if syn:
                     print("\n--- Start flow %s:%s -> %s:%s ---\n" % (src, tcp.sport, dst, tcp.dport))
+                    time_dict[tcp.seq+1] = ip['timestamp']
                     setup += 1
                 elif ack and not fin:
                     if setup == 2:
                         setup += 1
                     elif setup == 3:
                         if (src_c < max_pkt_per_flow):
-                            print("%s:%s -> %s:%s\n[SEQ=%s (Relative=%s), ACK=%s (Relative=%s), RWND=%s]\n" % (
+                            print("[%s:%s -> %s:%s]\nSEQ=%s (Relative=%s), ACK=%s (Relative=%s), RWND=%s\n" % (
                                 src, tcp.sport, dst, tcp.dport,
                                 tcp.seq,
                                 tcp.seq - flow['iseq'],
@@ -100,28 +116,51 @@ def analyze(pcap, max_pkt_per_flow=2, max_cwnd_rtt_count=5):
                             ))
                             src_c += 1
                         total_data += int(len(tcp.data) + (tcp.off/4))
+                        if tcp.seq+len(tcp.data) in time_dict:
+                            if fast_retransmit == tcp.seq:
+                                triple_dup_acks += 1
+                                fast_retransmit = 0
+                            elif (ip['timestamp']-time_dict[tcp.seq+len(tcp.data)]) > rtt_prime:
+                                timeouts += 1
+                            # seq_dict.pop(tcp.seq, None)
+                        else:
+                            time_dict[tcp.seq+len(tcp.data)] = ip['timestamp']
                         if (cwnd_i < max_cwnd_rtt_count):
-                            pkt_buf.append(tcp.seq + len(tcp.data))
+                            pkt_buf.append(tcp.seq)
                     else:
                         print("\n--- End flow (Handshake didn't finish) ---\n")
+                        break
                 elif fin:
                     print("\nTotal data sent: %s bytes" % total_data)
                     end_time = datetime.fromtimestamp(sorted_flows[-1]['timestamp'])
                     delta = ((end_time - start_time) / timedelta(milliseconds=1))
-                    print("Total time between first byte and last ack: %.2f ms" % delta)
-                    print("Sender throughput: %.2f bytes/ms" % (total_data/delta))
+                    print("Total time between first sent byte and last ack: %.2f ms" % delta)
+                    print("Sender throughput: %.2f bytes/ms\n" % (total_data/delta))
                     
                     for i, c in enumerate(cwnd_lst):
-                        print("Size of cwnd %s: %s packets" % (i+1, cwnd_lst[i]))
-                    
+                        change = ""
+                        if (c == cwnd_lst[0]):
+                            change = " (cwnd = icwnd)"
+                        elif (c > cwnd_lst[i-1]):
+                            change = " (cwnd += %s)" % (c - cwnd_lst[i-1])
+                        elif (c < cwnd_lst[i-1]):
+                            change = " (cwnd -= %s)" % (cwnd_lst[i-1] - c) 
+                        print("Estimated size of cwnd %s: %s packets%s" % (i+1, cwnd_lst[i], change))
+                    print("\nRetransmissions due to triple duplicate acks: %s" % (
+                        # len(list(filter(lambda x: x >= 3, ack_dict.values())))
+                        triple_dup_acks
+                    ))
+                    print("Retransmissions due to timeouts: %s" % timeouts)
                     print("\n--- End flow %s:%s -> %s:%s ---\n" % (src, tcp.sport, dst, tcp.dport))
                     break         
             elif (src == DST_IP and dst == SRC_IP):
                 if syn:
+                    rtt_old = ip['timestamp'] - time_dict[tcp.ack]
+                    rtt_prime = rtt_old
                     setup += 1
                 elif ack:
                     if (dst_c < max_pkt_per_flow):
-                        print("%s:%s <- %s:%s\n[SEQ=%s (Relative=%s), ACK=%s (Relative=%s), RWND=%s]\n" % (
+                        print("[%s:%s <- %s:%s]\nSEQ=%s (Relative=%s), ACK=%s (Relative=%s), RWND=%s\n" % (
                             dst, tcp.dport, src, tcp.sport,
                             tcp.seq,
                             tcp.seq - flow['iack'],
@@ -129,23 +168,40 @@ def analyze(pcap, max_pkt_per_flow=2, max_cwnd_rtt_count=5):
                             tcp.ack - flow['iseq'],
                             rwnd
                         ))
-                        dst_c += 1
-                    if (cwnd_i < max_cwnd_rtt_count):
-                        buf_size = len(pkt_buf)
-                        pkt_buf = list(filter(lambda x: x > tcp.ack, pkt_buf))
+                    if tcp.ack in time_dict:
+                        rtt_old = rtt_prime
+                        rtt_prime = ((1-WEIGHT)*rtt_old) + (WEIGHT*(ip['timestamp']-time_dict[tcp.ack]))
+
+                    if (math.isclose((cwnd_i+2)*rtt_prime, ip['timestamp']-flow['flow_start'], rel_tol=1e-2) and
+                        cwnd_i < max_cwnd_rtt_count and 
+                        sorted_flows[ip_i+1]['src'] == SRC_IP):
+                        pkt_buf = list(filter(lambda x: x >= tcp.ack, pkt_buf))
+                        buf_size = len(pkt_buf) + 1
                         cwnd_lst[cwnd_i] = (
                             buf_size 
                             if ((cwnd_i == 0) or (buf_size > cwnd_lst[cwnd_i-1]))
                             else cwnd_lst[cwnd_i-1]
-                        )
-                        cwnd_i += 1 
+                        ) if (cwnd_lst[cwnd_i] == 0) else cwnd_lst[cwnd_i]
+                        cwnd_i += 1
+
+                    if tcp.ack in ack_dict:
+                        ack_dict[tcp.ack] += 1
+                        if (ack_dict[tcp.ack] == 3):
+                            fast_retransmit = tcp.ack
+                    else:
+                        ack_dict[tcp.ack] = 0
+                    dst_c += 1
         else:
             continue
 
 if __name__ == "__main__":
-    if (len(sys.argv) != 2):
+    if (len(sys.argv) < 2 or len(sys.argv) > 4):
         print(USAGE)
         exit(0)
+    if (len(sys.argv) == 3):
+        SRC_IP = sys.argv[2]
+    if (len(sys.argv) == 4):
+        DST_IP = sys.argv[3]
     f = open(sys.argv[1], "rb")
     pcap = None
     try:
