@@ -56,11 +56,6 @@ def map_flow(pcap):
     return sorted(flow_lst, key=lambda f:f['flow_start']), total_flows
 
 def analyze(pcap, max_pkt_per_flow=2, max_cwnd_rtt_count=5):
-    """Print out information about each packet in a pcap
-
-       Args:
-           pcap: dpkt pcap reader object (dpkt.pcap.Reader)
-    """
     TCP_FLOWS_T = map_flow(pcap)
     print("\nTotal TCP Flows: %s\n" % TCP_FLOWS_T[1])
     for flow in TCP_FLOWS_T[0]:
@@ -122,7 +117,6 @@ def analyze(pcap, max_pkt_per_flow=2, max_cwnd_rtt_count=5):
                                 fast_retransmit = 0
                             elif (ip['timestamp']-time_dict[tcp.seq+len(tcp.data)]) > rtt_prime:
                                 timeouts += 1
-                            # seq_dict.pop(tcp.seq, None)
                         else:
                             time_dict[tcp.seq+len(tcp.data)] = ip['timestamp']
                         if (cwnd_i < max_cwnd_rtt_count):
@@ -138,6 +132,8 @@ def analyze(pcap, max_pkt_per_flow=2, max_cwnd_rtt_count=5):
                     print("Sender throughput: %.2f bytes/ms\n" % (total_data/delta))
                     
                     for i, c in enumerate(cwnd_lst):
+                        if(c == 0):
+                            break
                         change = ""
                         if (c == cwnd_lst[0]):
                             change = " (cwnd = icwnd)"
