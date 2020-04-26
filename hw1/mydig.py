@@ -1,4 +1,4 @@
-#!/bin/python
+#!/usr/bin/python3
 
 import sys, time, datetime, socket
 from dns import query, message, rdataclass, rdatatype, name

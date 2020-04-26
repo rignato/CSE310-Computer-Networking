@@ -1,4 +1,4 @@
-#!/bin/python
+#!/usr/bin/python3
 
 import dpkt
 import sys, datetime, socket, math
